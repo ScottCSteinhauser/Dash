@@ -28,6 +28,9 @@ import android.content.pm.PackageManager;
 import android.hardware.Camera;
 import android.hardware.display.DisplayManager;
 import android.hardware.display.VirtualDisplay;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.media.CamcorderProfile;
 import android.media.MediaRecorder;
 import android.media.projection.MediaProjection;
@@ -65,13 +68,16 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 
+import android.location.LocationListener;
+
+
 /**
  * Scott was here
  * Activity for the Ocr Detecting app.  This app detects text and displays the value with the
  * rear facing camera. During detection overlay graphics are drawn to indicate the position,
  * size, and contents of each TextBlock.
  */
-public final class OcrCaptureActivity extends AppCompatActivity {
+public final class OcrCaptureActivity extends AppCompatActivity implements LocationListener {
     private static final String TAG = "OcrCaptureActivity";
 
     // Intent request code to handle updating play services if needed.
@@ -109,6 +115,9 @@ public final class OcrCaptureActivity extends AppCompatActivity {
     private boolean screenSharing = false;
     private Object sSync = new Object();
 
+    private double latitude;
+    private double longitude;
+
     /**
      * Initializes the UI and creates the detector pipeline.
      */
@@ -117,14 +126,14 @@ public final class OcrCaptureActivity extends AppCompatActivity {
         super.onCreate(bundle);
         setContentView(R.layout.ocr_capture);
 
+        Log.d(TAG, "here");
+
         preview = (CameraSourcePreview) findViewById(R.id.preview);
         graphicOverlay = (GraphicOverlay<OcrGraphic>) findViewById(R.id.graphicOverlay);
         projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
 
         displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
-
-        Log.d(TAG, displayMetrics.widthPixels + " " + displayMetrics.heightPixels);
 
         // Set good defaults for capturing text.
         boolean autoFocus = true;
@@ -163,25 +172,37 @@ public final class OcrCaptureActivity extends AppCompatActivity {
                 };
         tts = new TextToSpeech(this.getApplicationContext(), listener);
 
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, this);
+
+
         initRecorder();
         prepareRecorder();
+    }
 
-        Button button = (Button) findViewById(R.id.stopButton);
-        button.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (screenSharing) {
-                    if (mediaProjection != null) {
-                        mediaProjection.stop();
-                        mediaProjection = null;
-                    }
-                    Log.d(TAG, "get stopx");
-                } else {
-                    Log.d(TAG, "wont stopx");
-                }
-            }
-        });
+    @Override
+    public void onLocationChanged(Location location) {
+        latitude = location.getLatitude();
+        longitude = location.getLongitude();
+    }
 
+    @Override
+    public void onProviderDisabled(String provider) {
+        Log.d("Latitude","disable");
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+        Log.d("Latitude","enable");
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+        Log.d("Latitude","status");
+    }
+
+    public long getTimeStamp(){
+        return System.currentTimeMillis();
     }
 
     private void initRecorder() {
@@ -195,10 +216,10 @@ public final class OcrCaptureActivity extends AppCompatActivity {
             mediaRecorder.setVideoEncodingBitRate(512 * 1000);
             mediaRecorder.setVideoFrameRate(30);
             mediaRecorder.setVideoSize(displayMetrics.widthPixels, displayMetrics.heightPixels);
-//            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
-            mediaRecorder.setOutputFile(getFilePath());
+            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
         }
     }
+
 
     private void prepareRecorder() {
         try {
@@ -215,9 +236,9 @@ public final class OcrCaptureActivity extends AppCompatActivity {
      * sending the request.
      */
     private void requestCameraPermission() {
-        Log.w(TAG, "Camera permission is not granted. Requesting permission");
+        Log.w(TAG, "Camera and Location permission is not granted. Requesting permission");
 
-        final String[] permissions = new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE};
+        final String[] permissions = new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION};
 
         if (!ActivityCompat.shouldShowRequestPermissionRationale(this,
                 Manifest.permission.CAMERA)) {
@@ -344,34 +365,7 @@ public final class OcrCaptureActivity extends AppCompatActivity {
             return null;
         }
 
-        Log.d(TAG, mediaFile.toString());
         return mediaFile;
-    }
-
-    public String getFilePath() {
-        final String directory = Environment.getExternalStorageDirectory() + File.separator + "Recordings";
-        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-            Toast.makeText(this, "Failed to get External Storage", Toast.LENGTH_SHORT).show();
-            return null;
-        }
-        final File folder = new File(directory);
-        boolean success = true;
-        if (!folder.exists()) {
-            success = folder.mkdir();
-        }
-        String filePath;
-        if (success) {
-            String videoName = ("capture_" + getCurSysDate() + ".mp4");
-            filePath = directory + File.separator + videoName;
-        } else {
-            Toast.makeText(this, "Failed to create Recordings directory", Toast.LENGTH_SHORT).show();
-            return null;
-        }
-        return filePath;
-    }
-
-    public String getCurSysDate() {
-        return new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
     }
 
     private void releaseMediaRecorder(){
@@ -429,6 +423,7 @@ public final class OcrCaptureActivity extends AppCompatActivity {
         }
         Log.d(TAG, "get destroyeied");
     }
+
 
     private void destroyMediaProjection() {
         if (mediaProjection != null) {
@@ -570,7 +565,7 @@ public final class OcrCaptureActivity extends AppCompatActivity {
     }
     private VirtualDisplay createVirtualDisplay() {
         return mediaProjection.createVirtualDisplay("BigBoi",
-                displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi,
+                cameraSource.requestedPreviewWidth, cameraSource.requestedPreviewHeight, displayMetrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mediaRecorder.getSurface(), null /*Callbacks*/, null /*Handler*/);
     }
