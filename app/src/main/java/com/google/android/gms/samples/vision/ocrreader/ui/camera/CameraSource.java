@@ -115,10 +115,10 @@ public class CameraSource {
 
     private Context context;
 
-    private final Object cameraLock = new Object();
+    public final Object cameraLock = new Object();
 
     // Guarded by cameraLock
-    private Camera camera;
+    public Camera camera;
 
     private int mFacing = CAMERA_FACING_BACK;
 
@@ -133,8 +133,8 @@ public class CameraSource {
     // These values may be requested by the caller.  Due to hardware limitations, we may need to
     // select close, but not exactly the same values for these.
     private float requestedFps = 30.0f;
-    private int requestedPreviewWidth = 1024;
-    private int requestedPreviewHeight = 768;
+    public int requestedPreviewWidth = 1024;
+    public int requestedPreviewHeight = 768;
 
 
     private String focusMode = null;
