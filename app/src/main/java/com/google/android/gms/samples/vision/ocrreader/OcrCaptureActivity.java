@@ -178,6 +178,22 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
 
         initRecorder();
         prepareRecorder();
+
+        Button button = (Button) findViewById(R.id.stopButton);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (screenSharing) {
+                    if (mediaProjection != null) {
+                        mediaProjection.stop();
+                        mediaProjection = null;
+                    }
+                    Log.d(TAG, "get stopx");
+                } else {
+                    Log.d(TAG, "wont stopx");
+                }
+            }
+        });
     }
 
     @Override
@@ -216,7 +232,8 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
             mediaRecorder.setVideoEncodingBitRate(512 * 1000);
             mediaRecorder.setVideoFrameRate(30);
             mediaRecorder.setVideoSize(displayMetrics.widthPixels, displayMetrics.heightPixels);
-            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
+//            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
+            mediaRecorder.setOutputFile(getFilePath());
         }
     }
 
@@ -367,6 +384,34 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
 
         return mediaFile;
     }
+
+
+    public String getFilePath() {
+        final String directory = Environment.getExternalStorageDirectory() + File.separator + "Recordings";
+        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
+            Toast.makeText(this, "Failed to get External Storage", Toast.LENGTH_SHORT).show();
+            return null;
+        }
+        final File folder = new File(directory);
+        boolean success = true;
+        if (!folder.exists()) {
+            success = folder.mkdir();
+        }
+        String filePath;
+        if (success) {
+            String videoName = ("capture_" + getCurSysDate() + ".mp4");
+            filePath = directory + File.separator + videoName;
+        } else {
+            Toast.makeText(this, "Failed to create Recordings directory", Toast.LENGTH_SHORT).show();
+            return null;
+        }
+        return filePath;
+    }
+
+    public String getCurSysDate() {
+        return new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
+    }
+
 
     private void releaseMediaRecorder(){
         if (mediaRecorder != null) {
@@ -565,7 +610,7 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
     }
     private VirtualDisplay createVirtualDisplay() {
         return mediaProjection.createVirtualDisplay("BigBoi",
-                cameraSource.requestedPreviewWidth, cameraSource.requestedPreviewHeight, displayMetrics.densityDpi,
+                displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mediaRecorder.getSurface(), null /*Callbacks*/, null /*Handler*/);
     }
