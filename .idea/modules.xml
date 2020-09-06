@@ -2,7 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/app.iml" filepath="$PROJECT_DIR$/.idea/modules/app/app.iml" group="ocr-reader-complete/app" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/Dash.iml" filepath="$PROJECT_DIR$/.idea/modules/Dash.iml" group="Dash" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/app/app.iml" filepath="$PROJECT_DIR$/.idea/modules/app/app.iml" group="Dash/app" />
       <module fileurl="file://$PROJECT_DIR$/.idea/modules/ocr-reader-complete.iml" filepath="$PROJECT_DIR$/.idea/modules/ocr-reader-complete.iml" group="ocr-reader-complete" />
     </modules>
   </component>
