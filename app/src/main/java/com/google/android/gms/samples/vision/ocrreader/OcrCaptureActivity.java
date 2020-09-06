@@ -48,6 +48,7 @@ import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
 import android.view.Surface;
 import android.view.View;
+import android.widget.Button;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
@@ -116,14 +117,14 @@ public final class OcrCaptureActivity extends AppCompatActivity {
         super.onCreate(bundle);
         setContentView(R.layout.ocr_capture);
 
-        Log.d(TAG, "here");
-
         preview = (CameraSourcePreview) findViewById(R.id.preview);
         graphicOverlay = (GraphicOverlay<OcrGraphic>) findViewById(R.id.graphicOverlay);
         projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
 
         displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+
+        Log.d(TAG, displayMetrics.widthPixels + " " + displayMetrics.heightPixels);
 
         // Set good defaults for capturing text.
         boolean autoFocus = true;
@@ -164,6 +165,23 @@ public final class OcrCaptureActivity extends AppCompatActivity {
 
         initRecorder();
         prepareRecorder();
+
+        Button button = (Button) findViewById(R.id.stopButton);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (screenSharing) {
+                    if (mediaProjection != null) {
+                        mediaProjection.stop();
+                        mediaProjection = null;
+                    }
+                    Log.d(TAG, "get stopx");
+                } else {
+                    Log.d(TAG, "wont stopx");
+                }
+            }
+        });
+
     }
 
     private void initRecorder() {
@@ -177,10 +195,10 @@ public final class OcrCaptureActivity extends AppCompatActivity {
             mediaRecorder.setVideoEncodingBitRate(512 * 1000);
             mediaRecorder.setVideoFrameRate(30);
             mediaRecorder.setVideoSize(displayMetrics.widthPixels, displayMetrics.heightPixels);
-            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
+//            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
+            mediaRecorder.setOutputFile(getFilePath());
         }
     }
-
 
     private void prepareRecorder() {
         try {
@@ -326,7 +344,34 @@ public final class OcrCaptureActivity extends AppCompatActivity {
             return null;
         }
 
+        Log.d(TAG, mediaFile.toString());
         return mediaFile;
+    }
+
+    public String getFilePath() {
+        final String directory = Environment.getExternalStorageDirectory() + File.separator + "Recordings";
+        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
+            Toast.makeText(this, "Failed to get External Storage", Toast.LENGTH_SHORT).show();
+            return null;
+        }
+        final File folder = new File(directory);
+        boolean success = true;
+        if (!folder.exists()) {
+            success = folder.mkdir();
+        }
+        String filePath;
+        if (success) {
+            String videoName = ("capture_" + getCurSysDate() + ".mp4");
+            filePath = directory + File.separator + videoName;
+        } else {
+            Toast.makeText(this, "Failed to create Recordings directory", Toast.LENGTH_SHORT).show();
+            return null;
+        }
+        return filePath;
+    }
+
+    public String getCurSysDate() {
+        return new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss").format(new Date());
     }
 
     private void releaseMediaRecorder(){
@@ -384,7 +429,6 @@ public final class OcrCaptureActivity extends AppCompatActivity {
         }
         Log.d(TAG, "get destroyeied");
     }
-
 
     private void destroyMediaProjection() {
         if (mediaProjection != null) {
@@ -526,7 +570,7 @@ public final class OcrCaptureActivity extends AppCompatActivity {
     }
     private VirtualDisplay createVirtualDisplay() {
         return mediaProjection.createVirtualDisplay("BigBoi",
-                cameraSource.requestedPreviewWidth, cameraSource.requestedPreviewHeight, displayMetrics.densityDpi,
+                displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 mediaRecorder.getSurface(), null /*Callbacks*/, null /*Handler*/);
     }
