@@ -65,6 +65,7 @@ import java.util.Date;
 import java.util.Locale;
 
 /**
+ * Scott was here
  * Activity for the Ocr Detecting app.  This app detects text and displays the value with the
  * rear facing camera. During detection overlay graphics are drawn to indicate the position,
  * size, and contents of each TextBlock.
