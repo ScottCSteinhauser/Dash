@@ -115,6 +115,7 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
     private boolean screenSharing = false;
     private Object sSync = new Object();
 
+    private String[] plateNumbers;
     private double latitude;
     private double longitude;
 
@@ -134,6 +135,8 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
 
         displayMetrics = new DisplayMetrics();
         getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
+
+        plateNumbers = getIntent().getStringArrayExtra("PLATE_NUMBERS");
 
         // Set good defaults for capturing text.
         boolean autoFocus = true;
@@ -192,6 +195,8 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
                 } else {
                     Log.d(TAG, "wont stopx");
                 }
+
+                startActivity(new Intent(getBaseContext(), home_page.class));
             }
         });
     }
@@ -579,6 +584,8 @@ public final class OcrCaptureActivity extends AppCompatActivity implements Locat
         if (resultCode != RESULT_OK) {
             Toast.makeText(this,
                     "Screen Cast Permission Denied", Toast.LENGTH_SHORT).show();
+
+            startActivity(new Intent(this, home_page.class));
             return;
         }
         mediaProjectionCallback = new MediaProjectionCallback();
