@@ -26,16 +26,27 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.hardware.Camera;
+import android.hardware.display.DisplayManager;
+import android.hardware.display.VirtualDisplay;
+import android.media.CamcorderProfile;
+import android.media.MediaRecorder;
+import android.media.projection.MediaProjection;
+import android.media.projection.MediaProjectionManager;
+import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.speech.tts.TextToSpeech;
 import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
+import android.util.DisplayMetrics;
 import android.util.Log;
+import android.util.SparseIntArray;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.ScaleGestureDetector;
+import android.view.Surface;
 import android.view.View;
 import android.widget.Toast;
 
@@ -47,7 +58,10 @@ import com.google.android.gms.samples.vision.ocrreader.ui.camera.GraphicOverlay;
 import com.google.android.gms.vision.text.TextBlock;
 import com.google.android.gms.vision.text.TextRecognizer;
 
+import java.io.File;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.Locale;
 
 /**
@@ -64,10 +78,15 @@ public final class OcrCaptureActivity extends AppCompatActivity {
     // Permission request codes need to be < 256
     private static final int RC_HANDLE_CAMERA_PERM = 2;
 
+    private static final int REQUEST_CODE = 1000;
+
+
     // Constants used to pass extra data in the intent
     public static final String AutoFocus = "AutoFocus";
     public static final String UseFlash = "UseFlash";
     public static final String TextBlockObject = "String";
+
+    private MediaRecorder mediaRecorder;
 
     private CameraSource cameraSource;
     private CameraSourcePreview preview;
@@ -80,6 +99,14 @@ public final class OcrCaptureActivity extends AppCompatActivity {
     // A TextToSpeech engine for speaking a String value.
     private TextToSpeech tts;
 
+    private MediaProjection mediaProjection;
+    private VirtualDisplay virtualDisplay;
+    private MediaProjectionCallback mediaProjectionCallback;
+    private MediaProjectionManager projectionManager;
+    DisplayMetrics displayMetrics;
+    private boolean screenSharing = false;
+    private Object sSync = new Object();
+
     /**
      * Initializes the UI and creates the detector pipeline.
      */
@@ -88,8 +115,14 @@ public final class OcrCaptureActivity extends AppCompatActivity {
         super.onCreate(bundle);
         setContentView(R.layout.ocr_capture);
 
+        Log.d(TAG, "here");
+
         preview = (CameraSourcePreview) findViewById(R.id.preview);
         graphicOverlay = (GraphicOverlay<OcrGraphic>) findViewById(R.id.graphicOverlay);
+        projectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+
+        displayMetrics = new DisplayMetrics();
+        getWindowManager().getDefaultDisplay().getMetrics(displayMetrics);
 
         // Set good defaults for capturing text.
         boolean autoFocus = true;
@@ -98,7 +131,9 @@ public final class OcrCaptureActivity extends AppCompatActivity {
         // Check for the camera permission before accessing the camera.  If the
         // permission is not granted yet, request permission.
         int rc = ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA);
-        if (rc == PackageManager.PERMISSION_GRANTED) {
+        int rc1 = ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO);
+        int rc2 = ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE);
+        if (rc == PackageManager.PERMISSION_GRANTED && rc1 == PackageManager.PERMISSION_GRANTED && rc2 == PackageManager.PERMISSION_GRANTED) {
             createCameraSource(autoFocus, useFlash);
         } else {
             requestCameraPermission();
@@ -125,6 +160,34 @@ public final class OcrCaptureActivity extends AppCompatActivity {
                     }
                 };
         tts = new TextToSpeech(this.getApplicationContext(), listener);
+
+        initRecorder();
+        prepareRecorder();
+    }
+
+    private void initRecorder() {
+        if (mediaRecorder == null) {
+            mediaRecorder = new MediaRecorder();
+            mediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+            mediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+            mediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+            mediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+            mediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
+            mediaRecorder.setVideoEncodingBitRate(512 * 1000);
+            mediaRecorder.setVideoFrameRate(30);
+            mediaRecorder.setVideoSize(displayMetrics.widthPixels, displayMetrics.heightPixels);
+            mediaRecorder.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString());
+        }
+    }
+
+
+    private void prepareRecorder() {
+        try {
+            mediaRecorder.prepare();
+        } catch (IllegalStateException | IOException e) {
+            e.printStackTrace();
+            finish();
+        }
     }
 
     /**
@@ -135,7 +198,7 @@ public final class OcrCaptureActivity extends AppCompatActivity {
     private void requestCameraPermission() {
         Log.w(TAG, "Camera permission is not granted. Requesting permission");
 
-        final String[] permissions = new String[]{Manifest.permission.CAMERA};
+        final String[] permissions = new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO, Manifest.permission.WRITE_EXTERNAL_STORAGE};
 
         if (!ActivityCompat.shouldShowRequestPermissionRationale(this,
                 Manifest.permission.CAMERA)) {
@@ -220,6 +283,56 @@ public final class OcrCaptureActivity extends AppCompatActivity {
                 .setFlashMode(useFlash ? Camera.Parameters.FLASH_MODE_TORCH : null)
                 .setFocusMode(autoFocus ? Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO : null)
                 .build();
+
+    }
+
+    public static final int MEDIA_TYPE_IMAGE = 1;
+    public static final int MEDIA_TYPE_VIDEO = 2;
+
+    /** Create a file Uri for saving an image or video */
+    private static Uri getOutputMediaFileUri(int type){
+        return Uri.fromFile(getOutputMediaFile(type));
+    }
+
+    /** Create a File for saving an image or video */
+    private static File getOutputMediaFile(int type){
+        // To be safe, you should check that the SDCard is mounted
+        // using Environment.getExternalStorageState() before doing this.
+
+        File mediaStorageDir = new File(Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES), "Dash");
+        // This location works best if you want the created images to be shared
+        // between applications and persist after your app has been uninstalled.
+
+        // Create the storage directory if it does not exist
+        if (! mediaStorageDir.exists()){
+            if (! mediaStorageDir.mkdirs()){
+                Log.d("Dash", "failed to create directory");
+                return null;
+            }
+        }
+
+        // Create a media file name
+        String timeStamp = new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
+        File mediaFile;
+        if (type == MEDIA_TYPE_IMAGE){
+            mediaFile = new File(mediaStorageDir.getPath() + File.separator +
+                    "IMG_"+ timeStamp + ".jpg");
+        } else if(type == MEDIA_TYPE_VIDEO) {
+            mediaFile = new File(mediaStorageDir.getPath() + File.separator +
+                    "VID_"+ timeStamp + ".mp4");
+        } else {
+            return null;
+        }
+
+        return mediaFile;
+    }
+
+    private void releaseMediaRecorder(){
+        if (mediaRecorder != null) {
+            mediaRecorder.reset();   // clear recorder configuration
+            mediaRecorder.release(); // release the recorder object
+        }
     }
 
     /**
@@ -246,11 +359,49 @@ public final class OcrCaptureActivity extends AppCompatActivity {
      * Releases the resources associated with the camera source, the associated detectors, and the
      * rest of the processing pipeline.
      */
+//    @Override
+//    protected void onDestroy() {
+//        super.onDestroy();
+//        if (preview != null) {
+//            mediaRecorder.stop();
+//            releaseMediaRecorder();
+//            destroyMediaProjection();
+//            stopScreenSharing();
+//            preview.release();
+//        }
+//    }
+
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         super.onDestroy();
+        if (mediaProjection != null) {
+            mediaProjection.stop();
+            mediaProjection = null;
+        }
         if (preview != null) {
             preview.release();
+        }
+        Log.d(TAG, "get destroyeied");
+    }
+
+
+    private void destroyMediaProjection() {
+        if (mediaProjection != null) {
+            mediaProjection.unregisterCallback(mediaProjectionCallback);
+            mediaProjection.stop();
+            mediaProjection = null;
+        }
+        Log.i(TAG, "MediaProjection Stopped");
+    }
+
+    private class MediaProjectionCallback extends MediaProjection.Callback {
+        @Override
+        public void onStop() {
+            mediaRecorder.stop();
+            mediaRecorder.reset();
+            Log.v(TAG, "Recording Stopped");
+            mediaProjection = null;
+            stopScreenSharing();
         }
     }
 
@@ -280,7 +431,7 @@ public final class OcrCaptureActivity extends AppCompatActivity {
             return;
         }
 
-        if (grantResults.length != 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+        if (grantResults.length > 2 && grantResults[0] == PackageManager.PERMISSION_GRANTED && grantResults[1] == PackageManager.PERMISSION_GRANTED && grantResults[2] == PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "Camera permission granted - initialize the camera source");
             // we have permission, so create the camerasource
             boolean autoFocus = getIntent().getBooleanExtra(AutoFocus,true);
@@ -322,7 +473,10 @@ public final class OcrCaptureActivity extends AppCompatActivity {
 
         if (cameraSource != null) {
             try {
+
                 preview.start(cameraSource, graphicOverlay);
+
+               shareScreen();
             } catch (IOException e) {
                 Log.e(TAG, "Unable to start camera source.", e);
                 cameraSource.release();
@@ -330,6 +484,84 @@ public final class OcrCaptureActivity extends AppCompatActivity {
             }
         }
     }
+
+    @Override
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode != REQUEST_CODE) {
+            Log.e(TAG, "Unknown request code: " + requestCode);
+            return;
+        }
+        if (resultCode != RESULT_OK) {
+            Toast.makeText(this,
+                    "Screen Cast Permission Denied", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        mediaProjectionCallback = new MediaProjectionCallback();
+        mediaProjection = projectionManager.getMediaProjection(resultCode, data);
+        mediaProjection.registerCallback(mediaProjectionCallback, null);
+        virtualDisplay = createVirtualDisplay();
+        mediaRecorder.start();
+    }
+
+    private void shareScreen() {
+        if (screenSharing) return;
+        screenSharing = true;
+
+        if (mediaProjection == null) {
+            startActivityForResult(projectionManager.createScreenCaptureIntent(),
+                    REQUEST_CODE);
+            return;
+        }
+        virtualDisplay = createVirtualDisplay();
+        mediaRecorder.start();
+    }
+    private void stopScreenSharing() {
+        if (!screenSharing) return;
+        screenSharing = false;
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+    }
+    private VirtualDisplay createVirtualDisplay() {
+        return mediaProjection.createVirtualDisplay("BigBoi",
+                cameraSource.requestedPreviewWidth, cameraSource.requestedPreviewHeight, displayMetrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                mediaRecorder.getSurface(), null /*Callbacks*/, null /*Handler*/);
+    }
+
+//
+//    private void shareScreen() {
+//        if (mediaProjection == null) {
+//            startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_CODE);
+//            Log.d(TAG, "activity started!!!!!!!!!!!");
+//            return;
+//        }
+//        virtualDisplay = createVirtualDisplay();
+//        Log.d(TAG, "starting.");
+//        mediaRecorder.start();
+//    }
+//
+//    private void stopScreenSharing() {
+//        if (virtualDisplay == null) {
+//            return;
+//        }
+//        virtualDisplay.release();
+//        //mMediaRecorder.release(); //If used: mMediaRecorder object cannot
+//        // be reused again
+////        destroyMediaProjection();
+////    }
+//
+//    private VirtualDisplay createVirtualDisplay() {
+//        DisplayMetrics metrics = new DisplayMetrics();
+//        getWindowManager().getDefaultDisplay().getMetrics(metrics);
+//
+//        return mediaProjection.createVirtualDisplay("OcrCaptureActivity",
+//                cameraSource.requestedPreviewWidth, cameraSource.requestedPreviewHeight, metrics.densityDpi,
+//                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+//                mediaRecorder.getSurface(), null /*Callbacks*/, null
+//                /*Handler*/);
+//    }
 
     /**
      * onTap is called to speak the tapped TextBlock, if any, out loud.
